@@ -2,6 +2,8 @@ package com.hack.hbbcompanion
 
 import android.net.wifi.WifiManager
 import android.os.AsyncTask
+import android.util.Log
+import okhttp3.*
 import java.io.IOException
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -41,6 +43,8 @@ class UPnPDiscovery(
                 val p = DatagramPacket(ByteArray(1024), 1024)
                 socket.receive(p)
                 val s = String(p.data, 0, p.length)
+                print(s)
+
                 val responseCode = s.substring(0, 12)
                 if (responseCode.toUpperCase(Locale.ROOT) == "HTTP/1.1 200") {
                     dialDevices.add(DialDevice(
@@ -48,8 +52,49 @@ class UPnPDiscovery(
                         p.address.hostAddress
                     ))
                 }
+                val request = Request.Builder()
+                    .get()
+                    .url(s.substringAfter("LOCATION: ").substringBefore("\r\n"))
+                    .build()
+
+                val client = OkHttpClient()
+                client.newCall(request).enqueue(object : Callback {
+                    override fun onFailure(call: Call?, e: IOException?) {
+                        print(e?.stackTrace)
+                    }
+
+                    override fun onResponse(call: Call?, response: Response?) {
+                        Log.d("HbbTv", response?.message() ?: "No message")
+
+                        val appName = "se.svt.smarttv"
+                        // val appName = "YouTube"
+
+                        val applicationUrl = response?.header("Application-URL") + appName
+
+                        client.newCall(Request.Builder()
+                            .url(applicationUrl)
+                            .post(RequestBody.create(null, ByteArray(0)))
+                            .header("Content-Length", "0")
+                            .build())
+                            .enqueue(object : Callback {
+                                override fun onFailure(call: Call?, e: IOException?) {
+                                    e?.printStackTrace()
+                                }
+
+                                override fun onResponse(call: Call?, response: Response?) {
+                                    Log.d(TAG, "MJAU MJAU MJAU: ${response?.code()}")
+                                }
+
+                            })
+                    }
+
+                })
                 curTime = System.currentTimeMillis()
+
             }
+
+
+
         } catch (e: UnknownHostException) {
             e.printStackTrace()
         } catch (e: IOException) {
@@ -62,6 +107,8 @@ class UPnPDiscovery(
     }
 
     companion object {
+        val TAG = "MJAU"
+
         fun discoverDevices(wifiManager: WifiManager): List<DialDevice> {
             val discover = UPnPDiscovery(wifiManager)
             discover.execute()
